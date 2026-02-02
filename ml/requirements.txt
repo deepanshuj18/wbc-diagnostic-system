@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+pydantic
+numpy
+pandas
+torch
+scikit-learn
+shap
+joblib
+scipy
+python-multipart
+gunicorn
+lime
+matplotlib
+seaborn
+pytorch-tabnet
+flask

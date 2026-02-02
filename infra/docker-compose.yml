@@ -1,0 +1,54 @@
+services:
+  mongo:
+    image: mongo:6.0
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  ml:
+    build: ../ml
+    container_name: ml
+    environment:
+      - MODEL_DIR=models
+    volumes:
+      - ../ml:/app
+      - ml-models:/app/models
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+    command: sh -c "python train_v2.py --epochs 80 --embed_dim 32 --mask_ratio 0.25 || true && uvicorn model_server_v2:app --host 0.0.0.0 --port 8000"
+
+  backend:
+    build: ../backend
+    container_name: backend
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/wbc-db
+      - JWT_SECRET=change-this-secret-key-in-production
+      - PORT=4000
+      - MODEL_API_URL=http://ml:8000
+    ports:
+      - "4000:4000"
+    depends_on:
+      - mongo
+      - ml
+
+  frontend:
+    build: ../frontend
+    container_name: frontend
+    environment:
+      - REACT_APP_API_URL=http://localhost:4000/api
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    command: npm start
+
+volumes:
+  mongo-data:
+  ml-models:

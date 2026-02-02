@@ -1,0 +1,299 @@
+/* frontend/src/styles.css */
+body { 
+  font-family: Arial, sans-serif; 
+  background: #f5f7fa; 
+  margin: 0; 
+  padding: 0; 
+  color: #222; 
+}
+
+.container { 
+  max-width: 1400px; 
+  margin: 20px auto; 
+  padding: 20px; 
+}
+
+.nav { 
+  background: #1f2937; 
+  color: white; 
+  padding: 10px 20px; 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.nav-left { 
+  font-weight: bold; 
+  font-size: 1.2em;
+}
+
+.nav-right { 
+  display: flex; 
+  gap: 15px; 
+  align-items: center;
+}
+
+.card { 
+  background: white; 
+  padding: 20px; 
+  margin: 12px 0; 
+  border-radius: 8px; 
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08); 
+}
+
+.grid { 
+  display: flex; 
+  gap: 12px; 
+}
+
+.tile { 
+  padding: 20px; 
+  background: #eef2ff; 
+  border-radius: 6px; 
+  min-width: 150px; 
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.patient-grid { 
+  display: grid; 
+  grid-template-columns: 250px 350px 1fr; 
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.patient-list { 
+  background: #f9fafb; 
+  border-radius: 6px; 
+  padding: 10px;
+}
+
+.patient-list ul { 
+  list-style: none; 
+  padding: 0; 
+  margin: 0;
+}
+
+.patient-list li { 
+  padding: 10px; 
+  border-bottom: 1px solid #e5e7eb; 
+  cursor: pointer; 
+  transition: background 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.patient-list li:hover {
+  background: #e5e7eb;
+}
+
+.delete-btn {
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.delete-btn:hover {
+  background: #b91c1c;
+}
+
+.patient-form, .patient-detail {
+  padding: 15px;
+}
+
+input, label {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+label {
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+input { 
+  width: 100%; 
+  padding: 8px; 
+  margin-bottom: 12px; 
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+button { 
+  padding: 10px 16px; 
+  background: #2563eb; 
+  color: white; 
+  border: none; 
+  border-radius: 6px; 
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+button:hover {
+  background: #1d4ed8;
+}
+
+button:disabled { 
+  opacity: 0.6; 
+  cursor: default; 
+}
+
+button.active {
+  background: #1e40af;
+}
+
+.error { 
+  color: #dc2626; 
+  margin-top: 8px; 
+  padding: 8px;
+  background: #fee2e2;
+  border-radius: 4px;
+}
+
+.success {
+  color: #065f46;
+  margin-top: 8px;
+  padding: 8px;
+  background: #d1fae5;
+  border-radius: 4px;
+}
+
+select {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+}
+
+.view-nav {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.view-nav button {
+  background: transparent;
+  color: #6b7280;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 12px 24px;
+  margin-bottom: -2px;
+}
+
+.view-nav button.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+.view-content {
+  min-height: 500px;
+}
+
+.patient-info {
+  background: #f3f4f6;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.patient-info div {
+  margin: 5px 0;
+}
+
+.prediction-summary {
+  background: #eff6ff;
+  padding: 15px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.prediction-summary div {
+  margin: 8px 0;
+  font-size: 15px;
+}
+
+.form-group {
+  background: #f9fafb;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.features-preview {
+  background: #fef3c7;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.features-preview label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.features-preview input {
+  font-size: 13px;
+  padding: 6px;
+  margin-bottom: 8px;
+}
+
+small {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+h1, h2, h3, h4, h5 {
+  color: #1f2937;
+  margin-top: 0;
+}
+
+h4 {
+  margin-bottom: 15px;
+}
+
+a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+ul li {
+  padding: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
