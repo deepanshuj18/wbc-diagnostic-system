@@ -26,7 +26,8 @@ services:
     container_name: backend
     environment:
       - MONGO_URI=mongodb://mongo:27017/wbc-db
-      - JWT_SECRET=change-this-secret-key-in-production
+      - JWT_SECRET=${JWT_SECRET:-wbc-dev-secret-change-in-production}
+      - FRONTEND_URL=http://localhost:3000
       - PORT=4000
       - MODEL_API_URL=http://ml:8000
     ports:

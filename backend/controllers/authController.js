@@ -10,7 +10,7 @@ exports.register = async (req, res) => {
     if (existing) return res.status(400).json({ error: 'Email exists' });
     const salt = await bcrypt.genSalt(10);
     const hash = await bcrypt.hash(password, salt);
-    const user = new User({ name, email, passwordHash: hash, role });
+    const user = new User({ name, email, passwordHash: hash, role: 'clinician' });
     await user.save();
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { id: user._id, email: user.email, name: user.name, role: user.role } });

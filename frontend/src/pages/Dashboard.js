@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import API from '../api';
 
-export default function Dashboard(){
+export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
   const [modelStatus, setModelStatus] = useState(null);
   const [loading, setLoading] = useState(true);
-  
-  useEffect(()=> {
+
+  useEffect(() => {
     fetchMetrics();
   }, []);
-  
+
   const fetchMetrics = async () => {
     setLoading(true);
     try {
@@ -18,84 +18,127 @@ export default function Dashboard(){
         API.get('/predictions'),
         API.get('/models/status').catch(() => ({ data: { error: 'Model server unavailable' } }))
       ]);
-      
+
       const predictions = predsRes.data;
       const malignant = predictions.filter(p => p.prediction === 0).length;
       const benign = predictions.filter(p => p.prediction === 1).length;
-      
-      setMetrics({ 
-        patients: patientsRes.data.length, 
+
+      setMetrics({
+        patients: patientsRes.data.length,
         predictions: predictions.length,
         malignant,
         benign
       });
       setModelStatus(modelRes.data);
-    } catch (err) { 
-      console.error('Failed to fetch metrics', err); 
+    } catch (err) {
+      console.error('Failed to fetch metrics', err);
       setMetrics({ patients: 0, predictions: 0, malignant: 0, benign: 0 });
     } finally {
       setLoading(false);
     }
   };
-  
+
   if (loading) {
-    return <div className="card">Loading...</div>;
+    return (
+      <div>
+        <h2>📊 Dashboard Overview</h2>
+        <div className="card" style={{ textAlign: 'center', padding: '60px' }}>
+          <div className="loading" style={{ margin: '0 auto', width: '40px', height: '40px' }}></div>
+          <p style={{ marginTop: '20px', color: 'var(--color-text-muted)' }}>Loading dashboard...</p>
+        </div>
+      </div>
+    );
   }
-  
+
   return (
     <div>
-      <h2>Dashboard Overview</h2>
-      
+      <h2 style={{ fontSize: '2.5em', marginBottom: '30px' }}>
+        📊 Dashboard Overview
+      </h2>
+
       <div className="card">
-        <h3>Application Statistics</h3>
+        <h3 style={{ marginBottom: '25px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span>📈</span> Application Statistics
+        </h3>
         <div className="grid">
-          <div className="tile">
-            <div style={{fontSize: '2em', fontWeight: 'bold', color: '#2563eb'}}>
-              {metrics?.patients ?? 0}
-            </div>
-            <div>Total Patients</div>
+          <div className="tile" style={{ background: 'var(--gradient-primary)' }}>
+            <div>{metrics?.patients ?? 0}</div>
+            <div>👥 Total Patients</div>
           </div>
-          <div className="tile">
-            <div style={{fontSize: '2em', fontWeight: 'bold', color: '#2563eb'}}>
-              {metrics?.predictions ?? 0}
-            </div>
-            <div>Total Predictions</div>
+          <div className="tile" style={{ background: 'var(--gradient-info)' }}>
+            <div>{metrics?.predictions ?? 0}</div>
+            <div>🔬 Total Predictions</div>
           </div>
         </div>
-        
+
         {metrics?.predictions > 0 && (
-          <div className="grid" style={{marginTop: '20px'}}>
-            <div className="tile" style={{background: '#fee2e2'}}>
-              <div style={{fontSize: '1.8em', fontWeight: 'bold', color: '#dc2626'}}>
-                {metrics?.malignant ?? 0}
-              </div>
-              <div>Malignant Cases</div>
+          <div className="grid" style={{ marginTop: '20px' }}>
+            <div className="tile danger">
+              <div>{metrics?.malignant ?? 0}</div>
+              <div>⚠️ Malignant Cases</div>
             </div>
-            <div className="tile" style={{background: '#d1fae5'}}>
-              <div style={{fontSize: '1.8em', fontWeight: 'bold', color: '#059669'}}>
-                {metrics?.benign ?? 0}
-              </div>
-              <div>Benign Cases</div>
+            <div className="tile success">
+              <div>{metrics?.benign ?? 0}</div>
+              <div>✅ Benign Cases</div>
             </div>
           </div>
         )}
       </div>
-      
+
       <div className="card">
-        <h3>Model Status</h3>
+        <h3 style={{ marginBottom: '25px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span>🧠</span> AI Model Status
+        </h3>
         {modelStatus?.error ? (
           <div className="error">
-            Model server unavailable. Please ensure the ML service is running.
+            <strong>⚠️ Model Server Unavailable</strong>
+            <p style={{ marginTop: '8px', marginBottom: 0 }}>
+              Please ensure the ML service is running on port 8000.
+            </p>
           </div>
         ) : modelStatus ? (
-          <div className="prediction-summary">
-            <div><strong>Model Version:</strong> {modelStatus.model_version || 'N/A'}</div>
-            <div><strong>Uptime:</strong> {Math.floor((modelStatus.uptime_seconds || 0) / 60)} minutes</div>
-            <div><strong>Input Dimension:</strong> {modelStatus.input_dim || 'N/A'}</div>
-            <div><strong>Embedding Dimension:</strong> {modelStatus.embed_dim || 'N/A'}</div>
+          <div style={{
+            background: 'var(--gradient-success)',
+            color: 'white',
+            padding: 'var(--space-xl)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: 'var(--shadow-lg)'
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div>
+                <div style={{ fontSize: '0.9em', opacity: 0.9, marginBottom: '5px' }}>Model Version</div>
+                <div style={{ fontSize: '1.3em', fontWeight: 'bold' }}>{modelStatus.model_version || 'N/A'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.9em', opacity: 0.9, marginBottom: '5px' }}>Uptime</div>
+                <div style={{ fontSize: '1.3em', fontWeight: 'bold' }}>
+                  {Math.floor((modelStatus.uptime_seconds || 0) / 60)} min
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.9em', opacity: 0.9, marginBottom: '5px' }}>Input Dimension</div>
+                <div style={{ fontSize: '1.3em', fontWeight: 'bold' }}>{modelStatus.input_dim || 'N/A'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.9em', opacity: 0.9, marginBottom: '5px' }}>Embedding Dimension</div>
+                <div style={{ fontSize: '1.3em', fontWeight: 'bold' }}>{modelStatus.embed_dim || 'N/A'}</div>
+              </div>
+            </div>
+            <div style={{
+              marginTop: '20px',
+              padding: '15px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: 'var(--radius-md)',
+              textAlign: 'center',
+              fontWeight: '600'
+            }}>
+              ✅ System Ready for Predictions
+            </div>
           </div>
         ) : (
-          <div>No model status available</div>
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
+            No model status available
+          </div>
         )}
       </div>
     </div>

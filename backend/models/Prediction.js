@@ -13,6 +13,7 @@ const PredictionSchema = new mongoose.Schema({
   shap_values: [Number],
   embedding: [Number],
   feature_names: [String],
+  warnings: [String],
   createdAt: { type: Date, default: Date.now }
 });
 module.exports = mongoose.model('Prediction', PredictionSchema);

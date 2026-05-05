@@ -6,7 +6,7 @@ const axios = require('axios');
 const Model = require('../models/Model');
 const Prediction = require('../models/Prediction');
 
-router.get('/status', async (req, res) => {
+router.get('/status', auth, async (req, res) => {
   try {
     const modelUrl = (process.env.MODEL_API_URL || 'http://ml:8000') + '/model_status';
     const resp = await axios.get(modelUrl, { timeout: 5000 });

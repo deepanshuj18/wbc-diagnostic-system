@@ -89,6 +89,22 @@ export default function FairnessDashboard() {
         Model fairness metrics across demographic groups (v2.0.0)
       </p>
 
+      {metrics.simulated_demographics && (
+        <div style={{
+          padding: '16px 20px',
+          background: 'linear-gradient(135deg, #fff3e0, #ffe0b2)',
+          border: '2px solid #ffb74d',
+          borderRadius: '10px',
+          marginBottom: '30px',
+          color: '#e65100'
+        }}>
+          <strong>⚠️ Simulated Demographics</strong>
+          <p style={{ margin: '8px 0 0 0', fontSize: '14px', lineHeight: '1.5' }}>
+            {metrics.demographics_note || 'The demographic data used for these fairness metrics is simulated. The Wisconsin Breast Cancer dataset does not contain real age/gender information.'}
+          </p>
+        </div>
+      )}
+
       {/* Overall Metrics */}
       <div style={{
         backgroundColor: 'white',

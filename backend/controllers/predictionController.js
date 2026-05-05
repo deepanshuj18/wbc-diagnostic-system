@@ -13,14 +13,11 @@ exports.predictForPatient = async (req, res) => {
       return res.status(400).json({ error: 'Patient has no features. Please add WBC features first.' });
     }
     
-    // call ML model API
+    // FIX #1: Send named features dict to guarantee correct feature order
+    // Instead of Object.values() which has no guaranteed order
     const modelUrl = (process.env.MODEL_API_URL || 'http://ml:8000') + '/predict';
-    // Convert features object to array in correct order
-    // Assume feature names are standardized - we need to map them properly
-    const features = Object.values(patient.features).map(v => Number(v));
-    
     const resp = await axios.post(modelUrl, { 
-      features, 
+      named_features: patient.features,
       method,
       age: patient.age,
       gender: patient.gender || patient.sex 
@@ -43,7 +40,8 @@ exports.predictForPatient = async (req, res) => {
       explanation_method: data.explanation_method,
       shap_values: data.shap_values,
       embedding: data.embedding_mean,
-      feature_names: data.feature_names
+      feature_names: data.feature_names,
+      warnings: data.warnings || []
     });
     await pred.save();
     res.json({ prediction: pred, raw: data });

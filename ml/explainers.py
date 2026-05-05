@@ -21,24 +21,62 @@ class UnifiedExplainer:
         self.feature_names = feature_names
         self.clf = clf
         self.decoder_weight_matrix = decoder_weight_matrix
-        
-    def explain_shap(self, X, background=None, nsamples=50):
+        self._background_embeddings = None  # Cached training data embeddings
+        self._background_scaled = None      # Cached scaled training data
+        self._init_background()
+
+    def _init_background(self):
+        """Precompute embeddings from training data for use as SHAP/LIME background"""
+        try:
+            from utils import prepare_data
+            (X_train_s, _), _, _, _, _ = prepare_data()
+            X_train_np = X_train_s.values.astype(np.float32)
+
+            # Use a subset (max 100 samples) for speed
+            if len(X_train_np) > 100:
+                idx = np.random.RandomState(42).choice(len(X_train_np), 100, replace=False)
+                X_train_np = X_train_np[idx]
+
+            self._background_scaled = X_train_np
+
+            # Generate embeddings for the background using encoder directly
+            self.model.eval()
+            with torch.no_grad():
+                X_tensor = torch.from_numpy(X_train_np)
+                if hasattr(self.model, 'encoder'):
+                    z = self.model.encoder(X_tensor)
+                    self._background_embeddings = z.cpu().numpy()
+                else:
+                    self._background_embeddings = X_train_np
+
+            print(f"  ✓ Background data initialized: {self._background_embeddings.shape[0]} samples")
+        except Exception as e:
+            print(f"  ⚠ Could not initialize background data: {e}")
+            self._background_embeddings = None
+            self._background_scaled = None
+
+    def explain_shap(self, X, background=None, nsamples=100):
         """
         SHAP explanation using KernelExplainer on embeddings
         Returns: shap_values, feature_importance
         """
-        # Generate embeddings
+        # Generate embeddings for the input sample using encoder directly
         with torch.no_grad():
             X_tensor = torch.from_numpy(X.astype(np.float32))
             if hasattr(self.model, 'encoder'):
-                _, z, _ = self.model(X_tensor)
+                z = self.model.encoder(X_tensor)
                 z_np = z.cpu().numpy()
             else:
                 z_np = X
         
-        # Create background
+        # Use precomputed training data background, NOT the input sample
         if background is None:
-            background = shap.kmeans(z_np, k=min(50, len(z_np)))
+            if self._background_embeddings is not None:
+                background = shap.kmeans(self._background_embeddings, k=min(50, len(self._background_embeddings)))
+            else:
+                # Fallback: at least warn that results will be poor
+                print("  ⚠ No background data available, SHAP values may be unreliable")
+                background = shap.kmeans(z_np, k=1)
         
         # Explain classifier predictions
         explainer = shap.KernelExplainer(
@@ -66,36 +104,44 @@ class UnifiedExplainer:
         if lime_tabular is None:
             raise ImportError("LIME not installed. Install with: pip install lime")
         
-        # Generate embeddings
+        # Generate embeddings for the input sample using encoder directly
         with torch.no_grad():
             X_tensor = torch.from_numpy(X.astype(np.float32))
             if hasattr(self.model, 'encoder'):
-                _, z, _ = self.model(X_tensor)
+                z = self.model.encoder(X_tensor)
                 z_np = z.cpu().numpy()
             else:
                 z_np = X
         
-        # Create LIME explainer on embeddings
+        # Use precomputed training data background for LIME reference distribution
+        if self._background_embeddings is not None:
+            training_data = self._background_embeddings
+        else:
+            training_data = z_np
+
+        # Create LIME explainer using training data as reference
         explainer = lime_tabular.LimeTabularExplainer(
-            z_np,
+            training_data,
             mode='classification',
-            feature_names=[f'emb_{i}' for i in range(z_np.shape[1])],
+            feature_names=[f'emb_{i}' for i in range(training_data.shape[1])],
             discretize_continuous=True
         )
         
-        # Explain first sample
+        # Explain first sample - must pass full predict_proba (2D) for classification
         explanation = explainer.explain_instance(
             z_np[0],
-            lambda z_vals: self.clf.predict_proba(z_vals)[:, 1],
-            num_features=num_features,
+            lambda z_vals: self.clf.predict_proba(z_vals),
+            num_features=training_data.shape[1],
             top_labels=1
         )
         
         # Get feature importance
-        lime_values = np.zeros(z_np.shape[1])
-        for feat_idx, weight in explanation.as_list():
-            idx = int(feat_idx.split('_')[1])
-            lime_values[idx] = weight
+        lime_values = np.zeros(training_data.shape[1])
+        # Get the top label from the explanation
+        top_label = list(explanation.local_exp.keys())[0]
+        for feat_idx, weight in explanation.local_exp[top_label]:
+            if 0 <= feat_idx < len(lime_values):
+                lime_values[feat_idx] = weight
         
         # Map to feature space if decoder available
         if self.decoder_weight_matrix is not None:

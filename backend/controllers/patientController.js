@@ -16,19 +16,26 @@ exports.listPatients = async (req, res) => {
 };
 
 exports.getPatient = async (req, res) => {
-  const p = await Patient.findById(req.params.id);
+  const p = await Patient.findOne({ _id: req.params.id, createdBy: req.user._id });
   if (!p) return res.status(404).json({ error: 'Not found' });
   res.json(p);
 };
 
 exports.updatePatient = async (req, res) => {
-  const p = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const p = await Patient.findOneAndUpdate(
+    { _id: req.params.id, createdBy: req.user._id },
+    req.body, { new: true }
+  );
+  if (!p) return res.status(404).json({ error: 'Not found' });
   res.json(p);
 };
 
 exports.deletePatient = async (req, res) => {
   try {
     const patientId = req.params.id;
+    // Verify ownership first
+    const patient = await Patient.findOne({ _id: patientId, createdBy: req.user._id });
+    if (!patient) return res.status(404).json({ error: 'Not found' });
     // Delete all predictions associated with this patient
     await Prediction.deleteMany({ patient: patientId });
     // Delete the patient

@@ -94,15 +94,34 @@ export default function PatientDetail({ patient, onRefresh }){
             <div><strong>Model Version:</strong> {latestPred.model_version || 'N/A'}</div>
           </div>
           
+          {latestPred.warnings && latestPred.warnings.length > 0 && (
+            <div style={{
+              marginTop: '15px',
+              padding: '12px 16px',
+              background: 'linear-gradient(135deg, #fff3e0, #ffe0b2)',
+              border: '1px solid #ffb74d',
+              borderRadius: '8px',
+              color: '#e65100'
+            }}>
+              <strong>⚠️ Warnings:</strong>
+              <ul style={{margin: '8px 0 0 0', paddingLeft: '20px'}}>
+                {latestPred.warnings.map((w, i) => (
+                  <li key={i} style={{marginBottom: '4px'}}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
           {latestPred.shap_values && latestPred.shap_values.length > 0 && (
             <div style={{marginTop: '20px'}}>
-              <h5>SHAP Feature Importance</h5>
+              <h5>{(latestPred.explanation_method || 'SHAP').toUpperCase()} Feature Importance</h5>
               <SHAPPlot 
                 shapValues={latestPred.shap_values}
-                featureNames={Array.isArray(latestPred.shap_values) ? 
+                featureNames={latestPred.feature_names || (Array.isArray(latestPred.shap_values) ? 
                   Array(latestPred.shap_values.length).fill(0).map((_, i) => `Feature ${i+1}`) : 
                   []
-                }
+                )}
+                methodName={(latestPred.explanation_method || 'SHAP').toUpperCase()}
               />
             </div>
           )}

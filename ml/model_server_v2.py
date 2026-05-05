@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import numpy as np
 import joblib
 import torch
-from typing import List, Optional, Literal
+from typing import List, Optional, Dict, Literal
 import os
 import time
 from utils import prepare_data
@@ -79,6 +79,8 @@ try:
     model.eval()
     
     # Get decoder weight matrix
+    # NOTE: This is a linear approximation (ignores ReLU). Used as fast fallback.
+    # For accurate explainability, we compute per-sample Jacobians in the explainer.
     with torch.no_grad():
         dec_fc1_w = model.decoder.fc1.weight.data.numpy()
         dec_fc2_w = model.decoder.fc2.weight.data.numpy()
@@ -99,7 +101,8 @@ if models_loaded:
 
 # Request models
 class PredictRequest(BaseModel):
-    features: List[float]
+    features: Optional[List[float]] = None
+    named_features: Optional[Dict[str, float]] = None  # FIX #1: Accept named features
     age: Optional[int] = None
     gender: Optional[str] = None
     method: Optional[str] = "shap"
@@ -121,29 +124,57 @@ def model_status():
         "embed_dim": embed_dim,
         "calibrated": calibrated_clf is not clf if models_loaded else False,
         "models_loaded": models_loaded,
-        "config": model_config
+        "config": model_config,
+        "feature_names": feature_names
     }
 
 @app.post("/predict")
 def predict(req: PredictRequest):
     """
-    Enhanced predict endpoint with calibration and explainability
+    Enhanced predict endpoint with calibration, explainability, and input validation.
+    Accepts either named_features (dict) or features (list).
     """
     if not models_loaded:
         raise HTTPException(status_code=500, detail="Models not loaded. Please train first.")
     
-    if len(req.features) != input_dim:
-        raise HTTPException(status_code=400, detail=f"Expected {input_dim} features, got {len(req.features)}")
+    warnings = []
+    
+    # FIX #1: Accept named features with guaranteed order
+    if req.named_features:
+        # Build feature array in the correct training order
+        missing_features = [f for f in feature_names if f not in req.named_features]
+        if missing_features:
+            raise HTTPException(status_code=400, detail=f"Missing features: {missing_features}")
+        raw_features = [float(req.named_features[f]) for f in feature_names]
+    elif req.features is not None:
+        if len(req.features) != input_dim:
+            raise HTTPException(status_code=400, detail=f"Expected {input_dim} features, got {len(req.features)}")
+        raw_features = req.features
+        warnings.append("Using positional features array — feature order not verified. Use named_features for safety.")
+    else:
+        raise HTTPException(status_code=400, detail="Provide either 'features' (list) or 'named_features' (dict)")
     
     # Preprocess
-    x = np.array(req.features, dtype=float).reshape(1, -1)
+    x = np.array(raw_features, dtype=float).reshape(1, -1)
+    
+    # FIX #2: Input validation
+    if np.any(np.isnan(x)) or np.any(np.isinf(x)):
+        raise HTTPException(status_code=400, detail="Features contain NaN or Infinity values")
+    
     x_s = scaler.transform(x)
+    
+    # Check for out-of-distribution features (> 5 std devs from training mean)
+    extreme_mask = np.abs(x_s[0]) > 5.0
+    if np.any(extreme_mask):
+        ood_features = [feature_names[i] for i in np.where(extreme_mask)[0]]
+        warnings.append(f"Unusual values detected for: {', '.join(ood_features)}. Prediction may be unreliable.")
+    
     x_t = torch.from_numpy(x_s.astype(np.float32))
     
-    # Generate embeddings
+    # FIX #4: Use encoder directly — consistent with training embedding generation
     model.eval()
     with torch.no_grad():
-        _, z, _ = model(x_t)
+        z = model.encoder(x_t)
         z_np = z.cpu().numpy()
     
     # Prediction with calibrated classifier
@@ -158,17 +189,23 @@ def predict(req: PredictRequest):
     pred = int(prob_cal >= 0.5)
     result = "Benign" if pred == 1 else "Malignant"
     
-    # Uncertainty estimation
+    # FIX #5: Improved uncertainty estimation
+    # Use probability-space variance with 30 MC dropout passes
+    mc_probs = []
+    model.train()  # Enable dropout
     with torch.no_grad():
-        zs = []
-        model.train()  # Enable dropout
-        for _ in range(10):
-            _, z_i, _ = model(x_t)
-            zs.append(z_i.cpu().numpy())
-        model.eval()
-        z_mean = np.mean(np.vstack(zs), axis=0)
-        z_std = np.std(np.vstack(zs), axis=0)
-        uncertainty = float(np.linalg.norm(z_std))
+        for _ in range(30):
+            z_i = model.encoder(x_t)
+            z_i_np = z_i.cpu().numpy()
+            if model_config.get('use_tabnet', False):
+                X_i = np.hstack([x_s, z_i_np])
+                p_i = float(calibrated_clf.predict_proba(X_i)[:, 1][0])
+            else:
+                p_i = float(calibrated_clf.predict_proba(z_i_np)[:, 1][0])
+            mc_probs.append(p_i)
+    model.eval()
+    uncertainty = float(np.std(mc_probs))  # Probability-space uncertainty
+    z_mean = z_np.flatten()  # Use the clean embedding, not MC mean
     
     # Explainability
     explanation_method = req.method.lower() if req.method else "shap"
@@ -176,14 +213,14 @@ def predict(req: PredictRequest):
     
     if explainer:
         try:
-            if model_config.get('use_tabnet', False):
-                feat_shap, emb_shap = explainer.explain(x_s, method=explanation_method)
-            else:
-                feat_shap, emb_shap = explainer.explain(x_s, method=explanation_method)
+            feat_shap, emb_shap = explainer.explain(x_s, method=explanation_method)
             shap_values = feat_shap.flatten().tolist()
         except Exception as e:
-            print(f"Explanation error: {e}")
+            print(f"Explanation error ({explanation_method}): {e}")
+            import traceback
+            traceback.print_exc()
             shap_values = [0.0] * input_dim
+            warnings.append(f"Explanation method '{explanation_method}' failed: {str(e)}")
     
     return {
         "prediction": pred,
@@ -194,8 +231,9 @@ def predict(req: PredictRequest):
         "explanation_method": explanation_method,
         "shap_values": shap_values,
         "feature_names": feature_names,
-        "embedding_mean": z_mean.flatten().tolist(),
+        "embedding_mean": z_mean.tolist(),
         "model_version": "2.0.0",
+        "warnings": warnings,
         "demographics": {
             "age": req.age,
             "gender": req.gender
@@ -243,7 +281,8 @@ def explain(
 @app.get("/model_fairness")
 def model_fairness():
     """
-    Compute fairness metrics on test data
+    Compute fairness metrics on test data.
+    FIX #6: Demographics are simulated and clearly labeled as such.
     """
     if not models_loaded:
         raise HTTPException(status_code=500, detail="Models not loaded")
@@ -252,11 +291,11 @@ def model_fairness():
     (X_train, y_train), (X_val, y_val), (X_test, y_test), _, _ = prepare_data()
     X_test_np = X_test.values.astype(np.float32)
     
-    # Generate predictions
+    # FIX #4: Use encoder directly for consistent embeddings
     model.eval()
     with torch.no_grad():
         X_test_tensor = torch.from_numpy(X_test_np)
-        _, z_test, _ = model(X_test_tensor)
+        z_test = model.encoder(X_test_tensor)
         z_test_np = z_test.cpu().numpy()
     
     # Predict
@@ -266,7 +305,9 @@ def model_fairness():
     else:
         y_pred = calibrated_clf.predict(z_test_np)
     
-    # Simulate demographics (in real app, this would come from database)
+    # FIX #6: Simulated demographics — clearly labeled
+    # The WBC dataset does not contain real age/gender data.
+    # These are generated for demonstration of the fairness pipeline only.
     np.random.seed(42)
     demographics = {
         'age': np.random.randint(20, 80, size=len(y_test)),
@@ -279,7 +320,9 @@ def model_fairness():
     return {
         "fairness_metrics": fairness_metrics,
         "model_version": "2.0.0",
-        "test_samples": len(y_test)
+        "test_samples": len(y_test),
+        "simulated_demographics": True,
+        "demographics_note": "Demographics are simulated. The Wisconsin Breast Cancer dataset does not contain real age/gender data. These metrics demonstrate the fairness monitoring pipeline."
     }
 
 @app.post("/embeddings_visualization")
@@ -295,11 +338,11 @@ def embeddings_visualization():
     X_all = np.vstack([X_train.values, X_val.values, X_test.values]).astype(np.float32)
     y_all = np.concatenate([y_train.values, y_val.values, y_test.values])
     
-    # Generate embeddings
+    # FIX #4: Use encoder directly for consistent embeddings
     model.eval()
     with torch.no_grad():
         X_all_tensor = torch.from_numpy(X_all)
-        _, z_all, _ = model(X_all_tensor)
+        z_all = model.encoder(X_all_tensor)
         z_all_np = z_all.cpu().numpy()
     
     # t-SNE

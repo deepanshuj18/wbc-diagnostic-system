@@ -60,17 +60,21 @@ def temperature_scaling(logits, temperature):
 
 def train_with_tabnet(save_dir='models', epochs=50, batch_size=32, lr=1e-3, embed_dim=32, mask_ratio=0.25, use_tabnet=True):
     """
-    Train hybrid MAE + TabNet model with calibration
+    Train hybrid MAE + TabNet model with calibration.
+    Uses 4-way split: train/val/cal/test to prevent data leakage.
     """
-    (X_train, y_train), (X_val, y_val), (X_test, y_test), scaler, feature_names = prepare_data()
+    # 4-way split: train, val, calibration, test
+    (X_train, y_train), (X_val, y_val), (X_cal, y_cal), (X_test, y_test), scaler, feature_names = prepare_data(include_cal=True)
     X_train_np = X_train.values.astype(np.float32)
     X_val_np = X_val.values.astype(np.float32)
+    X_cal_np = X_cal.values.astype(np.float32)
     X_test_np = X_test.values.astype(np.float32)
     
     # Check class distribution
     print(f"\nDataset distribution:")
     print(f"Train - Malignant: {np.sum(y_train==0)}, Benign: {np.sum(y_train==1)}")
     print(f"Val - Malignant: {np.sum(y_val==0)}, Benign: {np.sum(y_val==1)}")
+    print(f"Cal - Malignant: {np.sum(y_cal==0)}, Benign: {np.sum(y_cal==1)}")
     print(f"Test - Malignant: {np.sum(y_test==0)}, Benign: {np.sum(y_test==1)}")
     
     # Phase 1: Train MAE
@@ -120,21 +124,25 @@ def train_with_tabnet(save_dir='models', epochs=50, batch_size=32, lr=1e-3, embe
     joblib.dump(feature_names, os.path.join(save_dir, 'feature_names.joblib'))
     
     # Generate embeddings
-    print("\nPhase 2: Generating embeddings...")
+    # FIX: Use encoder directly (no masking) to match inference behavior
+    print("\nPhase 2: Generating embeddings (using encoder directly, no masking)...")
     model.eval()
     with torch.no_grad():
         X_train_tensor = torch.from_numpy(X_train_np).to(device)
-        _, z_train, _ = model(X_train_tensor)
+        z_train = model.encoder(X_train_tensor)
         X_val_tensor = torch.from_numpy(X_val_np).to(device)
-        _, z_val, _ = model(X_val_tensor)
+        z_val = model.encoder(X_val_tensor)
+        X_cal_tensor = torch.from_numpy(X_cal_np).to(device)
+        z_cal = model.encoder(X_cal_tensor)
         X_test_tensor = torch.from_numpy(X_test_np).to(device)
-        _, z_test, _ = model(X_test_tensor)
+        z_test = model.encoder(X_test_tensor)
     
     z_train_np = z_train.cpu().numpy()
     z_val_np = z_val.cpu().numpy()
+    z_cal_np = z_cal.cpu().numpy()
     z_test_np = z_test.cpu().numpy()
     
-    print(f"Embedding shapes - Train: {z_train_np.shape}, Val: {z_val_np.shape}, Test: {z_test_np.shape}")
+    print(f"Embedding shapes - Train: {z_train_np.shape}, Val: {z_val_np.shape}, Cal: {z_cal_np.shape}, Test: {z_test_np.shape}")
     
     # Phase 3: Train TabNet or Logistic Regression on embeddings
     print("\nPhase 3: Training classifier...")
@@ -199,22 +207,22 @@ def train_with_tabnet(save_dir='models', epochs=50, batch_size=32, lr=1e-3, embe
                 os.path.join(save_dir, 'model_config.joblib'))
     
     # Phase 4: Calibration
-    print("\nPhase 4: Applying temperature scaling calibration...")
+    # FIX: Use dedicated CALIBRATION set (not val set) to prevent data leakage
+    # FIX: Use sigmoid (Platt scaling) instead of isotonic — more stable with small samples
+    print("\nPhase 4: Applying Platt scaling calibration on dedicated calibration set...")
     
     if use_tabnet:
-        # For TabNet, use Platt scaling
-        from sklearn.calibration import CalibratedClassifierCV
-        calibrated_clf = CalibratedClassifierCV(clf, method='isotonic', cv=5)
-        calibrated_clf.fit(X_val_combined if use_tabnet else z_val_np, y_val.values)
+        X_cal_combined = np.hstack([X_cal_np, z_cal_np])
+        X_test_combined = np.hstack([X_test_np, z_test_np])
+        calibrated_clf = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
+        calibrated_clf.fit(X_cal_combined, y_cal.values)
     else:
-        # Temperature scaling for LR
-        from sklearn.calibration import CalibratedClassifierCV
-        calibrated_clf = CalibratedClassifierCV(clf, method='isotonic', cv=5)
-        calibrated_clf.fit(z_val_np, y_val.values)
+        calibrated_clf = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
+        calibrated_clf.fit(z_cal_np, y_cal.values)
     
     joblib.dump(calibrated_clf, os.path.join(save_dir, 'calibrated_clf.joblib'))
     
-    # Test calibrated performance
+    # Test calibrated performance on UNTOUCHED test set
     if use_tabnet:
         y_prob_cal = calibrated_clf.predict_proba(X_test_combined)[:,1]
     else:
@@ -230,7 +238,7 @@ def train_with_tabnet(save_dir='models', epochs=50, batch_size=32, lr=1e-3, embe
     
     print("\nCalibrated classifier saved")
     print(f"Saved model artifacts to {save_dir}")
-    print(f"\nTest Performance (Calibrated):")
+    print(f"\nTest Performance (Calibrated) — on untouched test set:")
     if use_tabnet:
         y_test_prob = calibrated_clf.predict_proba(X_test_combined)[:,1]
     else:
