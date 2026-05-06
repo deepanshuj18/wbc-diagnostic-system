@@ -10,8 +10,8 @@ export function setAuthToken(token) {
 }
 
 // New API functions for v2
-export async function getFairnessMetrics() {
-  const res = await API.get('/models/fairness');
+export async function getModelEvaluation() {
+  const res = await API.get('/models/evaluation');
   return res.data;
 }
 

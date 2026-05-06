@@ -1,4 +1,4 @@
-# ml/model_server_v2.py - Enhanced FastAPI server with multi-explainer, calibration, and fairness
+# ml/model_server_v2.py - Enhanced FastAPI server with multi-explainer, calibration, and evaluation
 from fastapi import FastAPI, Query, HTTPException
 from pydantic import BaseModel
 import numpy as np
@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Literal
 import os
 import time
 from utils import prepare_data
-from explainers import UnifiedExplainer, compute_fairness_metrics, compute_embeddings_tsne
+from explainers import UnifiedExplainer, compute_embeddings_tsne
 
 app = FastAPI(title="WBC Diagnostic System v2", version="2.0.0")
 MODEL_DIR = os.environ.get("MODEL_DIR", "models")
@@ -278,51 +278,127 @@ def explain(
         ]
     }
 
-@app.get("/model_fairness")
-def model_fairness():
+@app.get("/model_evaluation")
+def model_evaluation():
     """
-    Compute fairness metrics on test data.
-    FIX #6: Demographics are simulated and clearly labeled as such.
+    Compute comprehensive model evaluation metrics on test data.
+    Returns confusion matrix, ROC curve, PR curve, classification report, and calibration data.
     """
     if not models_loaded:
         raise HTTPException(status_code=500, detail="Models not loaded")
+    
+    from sklearn.metrics import (
+        confusion_matrix, classification_report,
+        roc_curve, auc, precision_recall_curve, average_precision_score,
+        accuracy_score, precision_score, recall_score, f1_score
+    )
     
     # Load test data
     (X_train, y_train), (X_val, y_val), (X_test, y_test), _, _ = prepare_data()
     X_test_np = X_test.values.astype(np.float32)
     
-    # FIX #4: Use encoder directly for consistent embeddings
+    # Generate embeddings
     model.eval()
     with torch.no_grad():
         X_test_tensor = torch.from_numpy(X_test_np)
         z_test = model.encoder(X_test_tensor)
         z_test_np = z_test.cpu().numpy()
     
-    # Predict
+    # Predictions & probabilities
     if model_config.get('use_tabnet', False):
-        X_test_combined = np.hstack([X_test_np, z_test_np])
-        y_pred = calibrated_clf.predict(X_test_combined)
+        X_combined = np.hstack([X_test_np, z_test_np])
+        y_pred = calibrated_clf.predict(X_combined)
+        y_prob = calibrated_clf.predict_proba(X_combined)[:, 1]
     else:
         y_pred = calibrated_clf.predict(z_test_np)
+        y_prob = calibrated_clf.predict_proba(z_test_np)[:, 1]
     
-    # FIX #6: Simulated demographics — clearly labeled
-    # The WBC dataset does not contain real age/gender data.
-    # These are generated for demonstration of the fairness pipeline only.
-    np.random.seed(42)
-    demographics = {
-        'age': np.random.randint(20, 80, size=len(y_test)),
-        'gender': np.random.choice(['M', 'F', 'Other'], size=len(y_test), p=[0.3, 0.65, 0.05])
+    y_true = y_test.values
+    
+    # 1. Confusion Matrix
+    cm = confusion_matrix(y_true, y_pred).tolist()
+    
+    # 2. Classification Report
+    report = classification_report(y_true, y_pred, target_names=['Malignant', 'Benign'], output_dict=True)
+    
+    # 3. ROC Curve
+    fpr, tpr, roc_thresholds = roc_curve(y_true, y_prob)
+    roc_auc = float(auc(fpr, tpr))
+    # Downsample for JSON (max 200 points)
+    step = max(1, len(fpr) // 200)
+    roc_data = {
+        "fpr": fpr[::step].tolist(),
+        "tpr": tpr[::step].tolist(),
+        "auc": roc_auc
     }
     
-    # Compute fairness metrics
-    fairness_metrics = compute_fairness_metrics(y_test.values, y_pred, demographics)
+    # 4. Precision-Recall Curve
+    pr_precision, pr_recall, pr_thresholds = precision_recall_curve(y_true, y_prob)
+    avg_precision = float(average_precision_score(y_true, y_prob))
+    step_pr = max(1, len(pr_precision) // 200)
+    pr_data = {
+        "precision": pr_precision[::step_pr].tolist(),
+        "recall": pr_recall[::step_pr].tolist(),
+        "average_precision": avg_precision
+    }
+    
+    # 5. Calibration data (bin predictions into 10 bins)
+    n_bins = 10
+    bin_edges = np.linspace(0, 1, n_bins + 1)
+    cal_predicted = []
+    cal_actual = []
+    cal_counts = []
+    for i in range(n_bins):
+        mask = (y_prob >= bin_edges[i]) & (y_prob < bin_edges[i + 1])
+        if i == n_bins - 1:  # Include upper edge in last bin
+            mask = mask | (y_prob == bin_edges[i + 1])
+        if np.sum(mask) > 0:
+            cal_predicted.append(float(np.mean(y_prob[mask])))
+            cal_actual.append(float(np.mean(y_true[mask])))
+            cal_counts.append(int(np.sum(mask)))
+    
+    calibration_data = {
+        "predicted": cal_predicted,
+        "actual": cal_actual,
+        "counts": cal_counts
+    }
+    
+    # 6. Overall summary metrics
+    summary = {
+        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        "roc_auc": roc_auc,
+        "avg_precision": avg_precision
+    }
+    
+    # 7. Top feature importances (from classifier coefficients if available)
+    feature_importance = []
+    if hasattr(clf, 'coef_'):
+        # Map embedding coefficients back to feature space
+        emb_coefs = clf.coef_.flatten()
+        if decoder_lin is not None:
+            feat_coefs = np.abs(np.dot(decoder_lin, emb_coefs))
+        else:
+            feat_coefs = np.abs(emb_coefs)
+        if len(feat_coefs) == len(feature_names):
+            top_idx = np.argsort(feat_coefs)[::-1][:15]
+            feature_importance = [
+                {"name": feature_names[i], "importance": float(feat_coefs[i])}
+                for i in top_idx
+            ]
     
     return {
-        "fairness_metrics": fairness_metrics,
+        "confusion_matrix": cm,
+        "classification_report": report,
+        "roc_curve": roc_data,
+        "pr_curve": pr_data,
+        "calibration": calibration_data,
+        "summary": summary,
+        "feature_importance": feature_importance,
         "model_version": "2.0.0",
-        "test_samples": len(y_test),
-        "simulated_demographics": True,
-        "demographics_note": "Demographics are simulated. The Wisconsin Breast Cancer dataset does not contain real age/gender data. These metrics demonstrate the fairness monitoring pipeline."
+        "test_samples": int(len(y_true))
     }
 
 @app.post("/embeddings_visualization")

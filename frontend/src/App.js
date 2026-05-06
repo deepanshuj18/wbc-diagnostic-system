@@ -3,7 +3,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import PatientList from './pages/PatientList';
-import FairnessDashboard from './pages/FairnessDashboard';
+
 import ModelInsights from './pages/ModelInsights';
 import Navbar from './components/Navbar';
 import { setAuthToken } from './api';
@@ -87,12 +87,7 @@ function App(){
           >
             Patients
           </button>
-          <button 
-            className={view === 'fairness' ? 'active' : ''} 
-            onClick={() => handleViewChange('fairness')}
-          >
-            Fairness
-          </button>
+
           <button 
             className={view === 'insights' ? 'active' : ''} 
             onClick={() => handleViewChange('insights')}
@@ -104,7 +99,7 @@ function App(){
         <div className="view-content">
           {view === 'dashboard' && <Dashboard key={`dashboard-${refreshKey}`} />}
           {view === 'patients' && <PatientList key={view} />}
-          {view === 'fairness' && <FairnessDashboard key={view} />}
+
           {view === 'insights' && <ModelInsights key={view} />}
         </div>
       </div>

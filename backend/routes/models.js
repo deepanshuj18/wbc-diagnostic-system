@@ -21,13 +21,13 @@ router.get('/versions', auth, async (req, res) => {
   res.json(models);
 });
 
-router.get('/fairness', auth, async (req, res) => {
+router.get('/evaluation', auth, async (req, res) => {
   try {
-    const modelUrl = (process.env.MODEL_API_URL || 'http://ml:8000') + '/model_fairness';
-    const resp = await axios.get(modelUrl, { timeout: 10000 });
+    const modelUrl = (process.env.MODEL_API_URL || 'http://ml:8000') + '/model_evaluation';
+    const resp = await axios.get(modelUrl, { timeout: 15000 });
     res.json(resp.data);
   } catch (err) {
-    res.status(503).json({ error: 'Failed to fetch fairness metrics: ' + err.message });
+    res.status(503).json({ error: 'Failed to fetch evaluation metrics: ' + err.message });
   }
 });
 
