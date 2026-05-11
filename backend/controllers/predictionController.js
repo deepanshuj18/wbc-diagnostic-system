@@ -36,6 +36,7 @@ exports.predictForPatient = async (req, res) => {
       result: data.result,
       probability: data.probability,
       calibrated_probability: data.calibrated_probability,
+      confidence: data.confidence,
       uncertainty: data.uncertainty,
       explanation_method: data.explanation_method,
       shap_values: data.shap_values,

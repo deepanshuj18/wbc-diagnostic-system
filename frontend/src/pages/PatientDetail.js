@@ -79,15 +79,18 @@ export default function PatientDetail({ patient, onRefresh }){
           <h4>Latest Prediction Result</h4>
           <div className="prediction-summary">
             <div><strong>Result:</strong> 
-              <span style={{color: latestPred.prediction === 1 ? '#4CAF50' : '#f44336', fontWeight: 'bold'}}>
-                {' '}{latestPred.result || (latestPred.prediction === 1 ? 'Benign' : 'Malignant')}
+              <span style={{color: latestPred.result === 'Benign' ? '#4CAF50' : '#f44336', fontWeight: 'bold'}}>
+                {' '}{latestPred.result || (latestPred.prediction === 1 ? 'Malignant' : 'Benign')}
               </span>
             </div>
-            <div><strong>Calibrated Probability:</strong> 
+            <div><strong>Confidence:</strong> 
+              {((latestPred.confidence || latestPred.calibrated_probability || latestPred.probability) * 100).toFixed(2)}%
+            </div>
+            <div><strong>P(Malignant):</strong> 
               {((latestPred.calibrated_probability || latestPred.probability) * 100).toFixed(2)}%
             </div>
             {latestPred.calibrated_probability !== undefined && latestPred.probability !== latestPred.calibrated_probability && (
-              <div><strong>Raw Probability:</strong> {(latestPred.probability * 100).toFixed(2)}%</div>
+              <div><strong>Raw P(Malignant):</strong> {(latestPred.probability * 100).toFixed(2)}%</div>
             )}
             <div><strong>Uncertainty:</strong> {latestPred.uncertainty?.toFixed(4)}</div>
             <div><strong>Explanation Method:</strong> {latestPred.explanation_method?.toUpperCase() || 'SHAP'}</div>
@@ -134,8 +137,8 @@ export default function PatientDetail({ patient, onRefresh }){
           <ul>
             {predictions.map((p, idx) => (
               <li key={p._id || idx}>
-                {new Date(p.createdAt).toLocaleString()}: {p.prediction === 1 ? 'Benign' : 'Malignant'} 
-                ({(p.probability * 100).toFixed(1)}%)
+                {new Date(p.createdAt).toLocaleString()}: {p.result || (p.prediction === 1 ? 'Malignant' : 'Benign')} 
+                — Confidence: {((p.confidence || p.calibrated_probability || p.probability) * 100).toFixed(1)}%
               </li>
             ))}
           </ul>

@@ -8,6 +8,7 @@ const PredictionSchema = new mongoose.Schema({
   result: String, // "Benign" or "Malignant"
   probability: Number,
   calibrated_probability: Number,
+  confidence: Number,
   uncertainty: Number,
   explanation_method: String,
   shap_values: [Number],

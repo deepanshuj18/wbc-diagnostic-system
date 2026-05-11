@@ -178,16 +178,26 @@ def predict(req: PredictRequest):
         z_np = z.cpu().numpy()
     
     # Prediction with calibrated classifier
+    # NOTE: sklearn breast cancer dataset uses 0=Malignant, 1=Benign
+    # predict_proba[:, 1] → P(Benign), so P(Malignant) = 1 - P(Benign)
     if model_config.get('use_tabnet', False):
         X_combined = np.hstack([x_s, z_np])
-        prob_cal = float(calibrated_clf.predict_proba(X_combined)[:, 1][0])
-        prob_raw = float(clf.predict_proba(X_combined)[:, 1][0])
+        prob_benign_cal = float(calibrated_clf.predict_proba(X_combined)[:, 1][0])
+        prob_benign_raw = float(clf.predict_proba(X_combined)[:, 1][0])
     else:
-        prob_cal = float(calibrated_clf.predict_proba(z_np)[:, 1][0])
-        prob_raw = float(clf.predict_proba(z_np)[:, 1][0])
+        prob_benign_cal = float(calibrated_clf.predict_proba(z_np)[:, 1][0])
+        prob_benign_raw = float(clf.predict_proba(z_np)[:, 1][0])
     
-    pred = int(prob_cal >= 0.5)
-    result = "Benign" if pred == 1 else "Malignant"
+    # Convert to P(Malignant) — this is what clinicians care about
+    prob_malignant_cal = 1.0 - prob_benign_cal
+    prob_malignant_raw = 1.0 - prob_benign_raw
+    
+    # Predict based on malignant probability
+    result = "Malignant" if prob_malignant_cal >= 0.5 else "Benign"
+    pred = 1 if result == "Malignant" else 0
+    
+    # Confidence = probability of the predicted class (always >= 0.5)
+    confidence = prob_malignant_cal if result == "Malignant" else prob_benign_cal
     
     # FIX #5: Improved uncertainty estimation
     # Use probability-space variance with 30 MC dropout passes
@@ -199,9 +209,9 @@ def predict(req: PredictRequest):
             z_i_np = z_i.cpu().numpy()
             if model_config.get('use_tabnet', False):
                 X_i = np.hstack([x_s, z_i_np])
-                p_i = float(calibrated_clf.predict_proba(X_i)[:, 1][0])
+                p_i = 1.0 - float(calibrated_clf.predict_proba(X_i)[:, 1][0])
             else:
-                p_i = float(calibrated_clf.predict_proba(z_i_np)[:, 1][0])
+                p_i = 1.0 - float(calibrated_clf.predict_proba(z_i_np)[:, 1][0])
             mc_probs.append(p_i)
     model.eval()
     uncertainty = float(np.std(mc_probs))  # Probability-space uncertainty
@@ -225,8 +235,9 @@ def predict(req: PredictRequest):
     return {
         "prediction": pred,
         "result": result,
-        "probability": prob_raw,
-        "calibrated_probability": prob_cal,
+        "probability": prob_malignant_raw,
+        "calibrated_probability": prob_malignant_cal,
+        "confidence": confidence,
         "uncertainty": uncertainty,
         "explanation_method": explanation_method,
         "shap_values": shap_values,

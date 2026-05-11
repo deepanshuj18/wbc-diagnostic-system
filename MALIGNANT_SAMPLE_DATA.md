@@ -48,7 +48,7 @@ This malignant case has been tested and verified to produce correct predictions.
 ### Expected Result
 - **Prediction:** Malignant
 - **Confidence:** Very High (>95%)
-- **Result:** `{"prediction": 0, "result": "Malignant"}`
+- **Result:** `{"prediction": 1, "result": "Malignant", "calibrated_probability": ~0.99, "confidence": ~0.99}`
 
 ### API Test (Curl)
 ```bash
